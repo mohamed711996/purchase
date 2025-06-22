@@ -33,14 +33,11 @@ st.markdown("""
         text-align: center;
         margin: 0.5rem 0;
     }
-    .alert-high { background-color: #ff4444; color: white; padding: 0.5rem; border-radius: 5px; }
-    .alert-medium { background-color: #ffaa00; color: white; padding: 0.5rem; border-radius: 5px; }
-    .alert-low { background-color: #00aa00; color: white; padding: 0.5rem; border-radius: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
 # Load data from Excel files with improved error handling
-@st.cache_data(ttl=300)  # Cache for 5 minutes
+@st.cache_data(ttl=300)
 def load_data():
     """Load data from Excel files with enhanced error handling"""
     try:
@@ -81,7 +78,6 @@ def load_data():
 
 # Convert DataFrame to Excel bytes with formatting
 def to_excel(df, filename_prefix="purchase_plan"):
-    """Convert DataFrame to Excel with enhanced formatting"""
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='خطة الشراء')
@@ -106,8 +102,6 @@ def to_excel(df, filename_prefix="purchase_plan"):
 
 # Enhanced purchase plan generation
 def generate_plan(sales, stock, purchases, target_month, target_year, safety_stock_days=30):
-    """Generate purchase plan with improved algorithms and annualized turnover rates"""
-    
     last_year = target_year - 1 
     prev_month = target_month - 1 if target_month > 1 else 12
     prev_year = target_year if target_month > 1 else target_year - 1
@@ -194,29 +188,22 @@ def generate_plan(sales, stock, purchases, target_month, target_year, safety_sto
     
     df['Total_Cost'] = df['Recommended_Purchase'] * df['Cost'] if 'Cost' in df.columns else 0
     
-    # --- تعديل: إضافة الأعمدة الجديدة هنا ---
     result_columns = [
         'Barcode', 'Name', 'Product Category/Complete Name', 'Quantity On Hand', 'Average_Monthly_Sales', 
-        'Days_Of_Stock', 
-        'Months_With_Sales', 'Invoice_Count', # <-- الأعمدة الجديدة التي تمت إضافتها
-        'Quantity_Turnover_Rate', 'Invoice_Turnover_Rate', 
-        'Quantity_Turnover_Classification', 'Invoice_Turnover_Classification', 
+        'Days_Of_Stock', 'Months_With_Sales', 'Invoice_Count', 'Quantity_Turnover_Rate', 
+        'Invoice_Turnover_Rate', 'Quantity_Turnover_Classification', 'Invoice_Turnover_Classification', 
         'Priority', 'Recommended_Purchase', 'Total_Cost', 'Suppliers'
     ]
     available_columns = [col for col in result_columns if col in df.columns]
     result_df = df[available_columns]
     
-    # --- تعديل: إضافة التسميات العربية هنا ---
     arabic_names = {
         'Barcode': 'الباركود', 'Name': 'اسم المنتج', 'Product Category/Complete Name': 'فئة المنتج',
         'Quantity On Hand': 'الكمية المتاحة', 'Average_Monthly_Sales': 'متوسط المبيعات الشهرية',
-        'Days_Of_Stock': 'أيام التغطية', 
-        'Months_With_Sales': 'شهور البيع', # <-- التسمية الجديدة
-        'Invoice_Count': 'عدد الفواتير', # <-- التسمية الجديدة
-        'Quantity_Turnover_Rate': 'معدل دوران الكميات',
-        'Invoice_Turnover_Rate': 'معدل دوران الفواتير', 'Quantity_Turnover_Classification': 'تصنيف دوران الكميات',
-        'Invoice_Turnover_Classification': 'تصنيف دوران الفواتير', 'Priority': 'الأولوية',
-        'Recommended_Purchase': 'الشراء المقترح', 'Total_Cost': 'التكلفة الإجمالية', 'Suppliers': 'الموردين'
+        'Days_Of_Stock': 'أيام التغطية', 'Months_With_Sales': 'شهور البيع', 'Invoice_Count': 'عدد الفواتير',
+        'Quantity_Turnover_Rate': 'معدل دوران الكميات', 'Invoice_Turnover_Rate': 'معدل دوران الفواتير', 
+        'Quantity_Turnover_Classification': 'تصنيف دوران الكميات', 'Invoice_Turnover_Classification': 'تصنيف دوران الفواتير', 
+        'Priority': 'الأولوية', 'Recommended_Purchase': 'الشراء المقترح', 'Total_Cost': 'التكلفة الإجمالية', 'Suppliers': 'الموردين'
     }
     return result_df.rename(columns=arabic_names)
 
@@ -224,9 +211,9 @@ def generate_plan(sales, stock, purchases, target_month, target_year, safety_sto
 def create_turnover_charts(df):
     fig = make_subplots(rows=1, cols=2, subplot_titles=["تحليل دوران الكميات (سنوي)", "تحليل دوران الفواتير (سنوي)"], specs=[[{"type": "pie"}, {"type": "pie"}]])
     quantity_counts = df['تصنيف دوران الكميات'].value_counts()
-    fig.add_trace(go.Pie(labels=quantity_counts.index, values=quantity_counts.values, name="دوران الكميات"), row=1, col=1)
+    fig.add_trace(go.Pie(labels=quantity_counts.index, values=quantity_counts.values), row=1, col=1)
     invoice_counts = df['تصنيف دوران الفواتير'].value_counts()
-    fig.add_trace(go.Pie(labels=invoice_counts.index, values=invoice_counts.values, name="دوران الفواتير"), row=1, col=2)
+    fig.add_trace(go.Pie(labels=invoice_counts.index, values=invoice_counts.values), row=1, col=2)
     fig.update_traces(textposition='inside', textinfo='percent+label', hole=.3)
     fig.update_layout(title_text="📊 تحليل معدلات دوران المخزون السنوية", font=dict(size=12), height=450, showlegend=False)
     return fig
@@ -234,9 +221,12 @@ def create_turnover_charts(df):
 def create_combined_analysis_chart(df):
     df_filtered = df[df['الشراء المقترح'] > 0]
     if df_filtered.empty: return None
+    hover_data = ['اسم المنتج', 'الكمية المتاحة', 'شهور البيع', 'عدد الفواتير']
+    if 'فئة المنتج' in df_filtered.columns:
+        hover_data.append('فئة المنتج')
     fig = px.scatter(df_filtered, x='معدل دوران الكميات', y='معدل دوران الفواتير', size='الشراء المقترح', color='الأولوية',
-                     hover_data=['اسم المنتج', 'الكمية المتاحة', 'شهور البيع', 'عدد الفواتير'], title="تحليل مقارن للمنتجات المقترحة",
-                     labels={'معدل دوران الكميات': 'معدل دوران الكميات (بطيء -> سريع)', 'معدل دوران الفواتير': 'معدل دوران الفواتير (نادر -> متكرر)'},
+                     hover_data=hover_data, title="تحليل مقارن للمنتجات المقترحة",
+                     labels={'معدل دوران الكميات': 'معدل دوران الكميات', 'معدل دوران الفواتير': 'معدل دوران الفواتير'},
                      color_discrete_map={'عاجل جداً': '#FF4444', 'عاجل': '#FF8800', 'متوسط': '#FFAA00', 'منخفض': '#00AA00'})
     fig.update_layout(height=500)
     return fig
@@ -253,7 +243,8 @@ def create_stock_days_chart(df):
     df_filtered = df[df['الشراء المقترح'] > 0]
     if df_filtered.empty: return None
     fig = px.histogram(df_filtered, x='أيام التغطية', nbins=30, title="توزيع أيام التغطية للمنتجات المطلوب شراؤها")
-    fig.add_vline(x=df_filtered['أيام التغطية'].median(), line_dash="dash", line_color="red", annotation_text=f"الوسيط: {df_filtered['أيام التغطية'].median():.1f} يوم")
+    median_val = df_filtered['أيام التغطية'].median()
+    fig.add_vline(x=median_val, line_dash="dash", line_color="red", annotation_text=f"الوسيط: {median_val:.1f} يوم")
     fig.update_layout(xaxis_title="أيام التغطية", yaxis_title="عدد المنتجات", height=400)
     return fig
 
@@ -290,10 +281,8 @@ def main():
                 if plan.empty:
                     st.warning("⚠️ لم يتم إنشاء خطة شراء. تحقق من البيانات.")
                     return
-                
                 st.success("✅ تم توليد خطة الشراء بنجاح!")
                 st.session_state.plan = plan
-
             except Exception as e:
                 st.error(f"❌ خطأ في توليد خطة الشراء: {str(e)}")
                 st.exception(e)
@@ -327,25 +316,42 @@ def main():
         stock_chart = create_stock_days_chart(plan)
         if stock_chart: st.plotly_chart(stock_chart, use_container_width=True)
         
+        # ######################################
+        # ###   الكود الجديد لإضافة الفلاتر   ###
+        # ######################################
         st.subheader("🔍 تصفية وعرض النتائج")
-        filter_cols = st.columns(4)
-        quantity_turnover_filter = filter_cols[0].multiselect("تصنيف دوران الكميات:", options=plan['تصنيف دوران الكميات'].unique(), default=plan['تصنيف دوران الكميات'].unique())
-        invoice_turnover_filter = filter_cols[1].multiselect("تصنيف دوران الفواتير:", options=plan['تصنيف دوران الفواتير'].unique(), default=plan['تصنيف دوران الفواتير'].unique())
-        priority_filter = filter_cols[2].multiselect("الأولوية:", options=plan['الأولوية'].unique(), default=plan['الأولوية'].unique())
-        min_purchase = filter_cols[3].number_input("الحد الأدنى للشراء:", min_value=0.0, value=1.0, step=1.0)
-        
-        filtered_plan = plan[
+        filter_cols = st.columns(5) 
+
+        with filter_cols[0]:
+            if 'فئة المنتج' in plan.columns:
+                available_categories = sorted(plan['فئة المنتج'].dropna().unique())
+                category_filter = st.multiselect("فئة المنتج:", options=available_categories, default=available_categories)
+            else:
+                category_filter = []
+        with filter_cols[1]:
+            quantity_turnover_filter = st.multiselect("تصنيف دوران الكميات:", options=plan['تصنيف دوران الكميات'].unique(), default=plan['تصنيف دوران الكميات'].unique())
+        with filter_cols[2]:
+            invoice_turnover_filter = st.multiselect("تصنيف دوران الفواتير:", options=plan['تصنيف دوران الفواتير'].unique(), default=plan['تصنيف دوران الفواتير'].unique())
+        with filter_cols[3]:
+            priority_filter = st.multiselect("الأولوية:", options=plan['الأولوية'].unique(), default=plan['الأولوية'].unique())
+        with filter_cols[4]:
+            min_purchase = st.number_input("الحد الأدنى للشراء:", min_value=0.0, value=1.0, step=1.0)
+
+        filtering_conditions = (
             (plan['تصنيف دوران الكميات'].isin(quantity_turnover_filter)) &
             (plan['تصنيف دوران الفواتير'].isin(invoice_turnover_filter)) &
             (plan['الأولوية'].isin(priority_filter)) &
             (plan['الشراء المقترح'] >= min_purchase)
-        ]
+        )
+        if 'فئة المنتج' in plan.columns and category_filter:
+            filtering_conditions &= (plan['فئة المنتج'].isin(category_filter))
         
+        filtered_plan = plan[filtering_conditions]
+
         st.subheader(f"📋 خطة الشراء المفصلة ({len(filtered_plan)} منتج)")
         st.dataframe(
             filtered_plan,
-            use_container_width=True,
-            hide_index=True,
+            use_container_width=True, hide_index=True,
             column_config={
                 "الأولوية": st.column_config.SelectboxColumn("الأولوية", options=["عاجل جداً", "عاجل", "متوسط", "منخفض"]),
                 "الشراء المقترح": st.column_config.NumberColumn("الشراء المقترح", format="%.0f"),
@@ -356,27 +362,24 @@ def main():
                 "الكمية المتاحة": st.column_config.NumberColumn(format="%.0f"),
                 "متوسط المبيعات الشهرية": st.column_config.NumberColumn(format="%.1f"),
                 "أيام التغطية": st.column_config.NumberColumn(help="عدد الأيام التي تكفيها الكمية الحالية", format="%.1f يوم"),
-                "التكلفة الإجمالية": st.column_config.NumberColumn("التكلفة الإجمالية", format="EGP %.2f")
+                "التكلفة الإجمالية": st.column_config.NumberColumn("التكلفة الإجمالية", format="SAR %.2f")
             }
         )
 
         if 'فئة المنتج' in filtered_plan.columns:
             st.subheader("📋 ملخص حسب الفئة")
-            category_summary = filtered_plan.groupby('فئة المنتج').agg(
-                إجمالي_الشراء_المقترح=('الشراء المقترح', 'sum'), 
-                عدد_المنتجات=('الباركود', 'count')
-            ).round(0).sort_values('إجمالي_الشراء_المقترح', ascending=False)
+            category_summary = filtered_plan.groupby('فئة المنتج').agg(إجمالي_الشراء_المقترح=('الشراء المقترح', 'sum'), عدد_المنتجات=('الباركود', 'count')).round(0).sort_values('إجمالي_الشراء_المقترح', ascending=False)
             st.dataframe(category_summary, use_container_width=True)
         
         st.subheader("📥 تحميل النتائج")
         download_cols = st.columns(2)
         excel_file = to_excel(filtered_plan)
-        download_cols[0].download_button(label="📊 تحميل الخطة المفلترة (Excel)", data=excel_file, file_name=f"purchase_plan_{target_year}_{target_month:02d}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        download_cols[0].download_button(label="📊 تحميل الخطة المفلترة (Excel)", data=excel_file, file_name=f"purchase_plan_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         
         urgent_products = filtered_plan[filtered_plan['الأولوية'].isin(['عاجل', 'عاجل جداً'])]
         if not urgent_products.empty:
             urgent_excel = to_excel(urgent_products)
-            download_cols[1].download_button(label="🚨 تحميل المنتجات العاجلة فقط", data=urgent_excel, file_name=f"urgent_purchases_{target_year}_{target_month:02d}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            download_cols[1].download_button(label="🚨 تحميل المنتجات العاجلة فقط", data=urgent_excel, file_name=f"urgent_purchases_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
 if __name__ == "__main__":
     main()
