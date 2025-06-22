@@ -182,7 +182,7 @@ def main():
             # عرض إحصائيات سريعة
             total_recommended = plan['الشراء المقترح'].sum()
             products_to_buy = len(plan[plan['الشراء المقترح'] > 0])
-            avg_turnover = plan['معدل الدوران'].
+            avg_turnover = plan['معدل الدوران (كمي)'].mean()
          mean()
             fast_moving = len(plan[plan['تصنيف الدوران'].isin(['سريع', 'سريع جداً'])])
             slow_moving = len(plan[plan['تصنيف الدوران'].isin(['بطيء', 'راكد'])])
