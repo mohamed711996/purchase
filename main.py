@@ -5,11 +5,17 @@ import io
 
 @st.cache_data
 def load_data(): 
-    sales = pd.read_excel("sales_summary.xlsx") 
-    stock = pd.read_excel("Stocks.xlsx") 
+    sales = pd.read_excel("sales_summary.xlsx")
+    stock = pd.read_excel("Stocks.xlsx")
     purchases = pd.read_excel("Purchase.xlsx")
-    return sales, stock, purchases
 
+    # تأكد من أن باركود في كل الجداول نصي (string)
+    sales['Barcode'] = sales['Barcode'].astype(str)
+    stock['Barcode'] = stock['Barcode'].astype(str)
+    purchases['Barcode'] = purchases['Barcode'].astype(str)
+
+    return sales, stock, purchases
+    
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
