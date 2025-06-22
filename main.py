@@ -8,7 +8,7 @@ import io
 def load_data(): 
     sales = pd.read_excel("sales_summary.xlsx") 
     stock = pd.read_excel("Stocks.xlsx") 
-    purchases = pd.read_excel("Purchase.xlsx")  # ملف المشتريات
+    purchases = pd.read_excel("purchases.xlsx")  # ملف المشتريات
     return sales, stock, purchases 
 
 # Convert DataFrame to Excel bytes
@@ -43,11 +43,19 @@ def generate_plan(sales, stock, purchases, target_month, target_year):
  
     # دمج البيانات
     combined = pd.concat([sales_prev_month, sales_last_year])
+    
+    # حساب عدد الشهور اللي فيها مبيعات فعلية لكل منتج
+    months_with_sales = combined.groupby('Barcode').size().reset_index(name='Months_With_Sales')
+    
+    # حساب إجمالي المبيعات
     sales_summary = combined.groupby('Barcode')['Quantity'].sum().reset_index()
     
-    # حساب متوسط المبيعات (إجمالي المبيعات ÷ 4 شهور)
-    sales_summary['Average_Monthly_Sales'] = sales_summary['Quantity'] / 4
-    sales_summary.rename(columns={'Quantity': 'Total_Sales_4_Months'}, inplace=True)
+    # دمج عدد الشهور مع المبيعات
+    sales_summary = sales_summary.merge(months_with_sales, on='Barcode')
+    
+    # حساب متوسط المبيعات على أساس الشهور الفعلية
+    sales_summary['Average_Monthly_Sales'] = sales_summary['Quantity'] / sales_summary['Months_With_Sales']
+    sales_summary.rename(columns={'Quantity': 'Total_Sales_Period'}, inplace=True)
     
     # تحضير بيانات المشتريات لنفس الفترة
     purchases['Date'] = pd.to_datetime(purchases['Date'])
@@ -66,32 +74,66 @@ def generate_plan(sales, stock, purchases, target_month, target_year):
     
     # دمج بيانات المشتريات
     combined_purchases = pd.concat([purchases_prev_month, purchases_last_year])
+    
+    # حساب عدد الشهور اللي فيها مشتريات فعلية
+    months_with_purchases = combined_purchases.groupby('Barcode').size().reset_index(name='Months_With_Purchases')
+    
     purchases_summary = combined_purchases.groupby('Barcode').agg({
         'purchase': 'sum',  # إجمالي المشتريات
         'اسم المورد': lambda x: ', '.join(x.unique())  # أسماء الموردين
     }).reset_index()
+    
+    # دمج عدد الشهور مع المشتريات
+    purchases_summary = purchases_summary.merge(months_with_purchases, on='Barcode')
+    
     purchases_summary.rename(columns={
-        'purchase': 'Total_Purchases_4_Months',
+        'purchase': 'Total_Purchases_Period',
         'اسم المورد': 'Suppliers'
     }, inplace=True)
+    
+    # إضافة بيانات الموردين من ملف المخزون إذا كان متوفر
+    if 'اسم المورد' in stock.columns:
+        stock_suppliers = stock[['Barcode', 'اسم المورد']].dropna()
+        stock_suppliers.rename(columns={'اسم المورد': 'Stock_Supplier'}, inplace=True)
+    else:
+        stock_suppliers = pd.DataFrame(columns=['Barcode', 'Stock_Supplier'])
  
     # دمج مع بيانات المخزون
     df = stock.merge(sales_summary, on='Barcode', how='left')
     df = df.merge(purchases_summary, on='Barcode', how='left')
     
+    # دمج بيانات الموردين من المخزون إذا كان متوفر
+    if len(stock_suppliers) > 0:
+        df = df.merge(stock_suppliers, on='Barcode', how='left')
+        # دمج الموردين من المشتريات والمخزون
+        df['All_Suppliers'] = df.apply(lambda row: 
+            ', '.join(filter(None, [
+                str(row.get('Suppliers', '')).strip() if pd.notna(row.get('Suppliers')) and str(row.get('Suppliers')).strip() != 'غير محدد' else '',
+                str(row.get('Stock_Supplier', '')).strip() if pd.notna(row.get('Stock_Supplier')) else ''
+            ])), axis=1)
+        df['All_Suppliers'] = df['All_Suppliers'].apply(lambda x: x if x else 'غير محدد')
+    else:
+        df['All_Suppliers'] = df['Suppliers'].fillna('غير محدد')
+    
     # ملء القيم المفقودة
-    df['Total_Sales_4_Months'] = df['Total_Sales_4_Months'].fillna(0)
+    df['Total_Sales_Period'] = df['Total_Sales_Period'].fillna(0)
     df['Average_Monthly_Sales'] = df['Average_Monthly_Sales'].fillna(0)
-    df['Total_Purchases_4_Months'] = df['Total_Purchases_4_Months'].fillna(0)
+    df['Months_With_Sales'] = df['Months_With_Sales'].fillna(0)
+    df['Total_Purchases_Period'] = df['Total_Purchases_Period'].fillna(0)
+    df['Months_With_Purchases'] = df['Months_With_Purchases'].fillna(0)
     df['Suppliers'] = df['Suppliers'].fillna('غير محدد')
+    
+    # التأكد من وجود عمود All_Suppliers
+    if 'All_Suppliers' not in df.columns:
+        df['All_Suppliers'] = df['Suppliers']
     
     # حساب معدل الدوران
     # معدل الدوران = إجمالي المبيعات ÷ متوسط المخزون
     # متوسط المخزون = (المخزون الحالي + المشتريات) ÷ 2
-    df['Average_Inventory'] = (df['Quantity On Hand'] + df['Total_Purchases_4_Months']) / 2
+    df['Average_Inventory'] = (df['Quantity On Hand'] + df['Total_Purchases_Period']) / 2
     df['Average_Inventory'] = df['Average_Inventory'].replace(0, 1)  # تجنب القسمة على صفر
     
-    df['Inventory_Turnover_Rate'] = df['Total_Sales_4_Months'] / df['Average_Inventory']
+    df['Inventory_Turnover_Rate'] = df['Total_Sales_Period'] / df['Average_Inventory']
     df['Inventory_Turnover_Rate'] = df['Inventory_Turnover_Rate'].round(2)
     
     # تصنيف سرعة الدوران
@@ -119,8 +161,10 @@ def generate_plan(sales, stock, purchases, target_month, target_year):
         'Name', 
         'Product Category/Complete Name', 
         'Quantity On Hand', 
-        'Total_Sales_4_Months',
-        'Total_Purchases_4_Months',
+        'Total_Sales_Period',
+        'Months_With_Sales',
+        'Total_Purchases_Period',
+        'Months_With_Purchases',
         'Average_Monthly_Sales',
         'Average_Inventory',
         'Inventory_Turnover_Rate',
@@ -135,8 +179,10 @@ def generate_plan(sales, stock, purchases, target_month, target_year):
         'اسم المنتج', 
         'فئة المنتج',
         'الكمية المتاحة',
-        'إجمالي مبيعات 4 شهور',
-        'إجمالي مشتريات 4 شهور',
+        'إجمالي المبيعات في الفترة',
+        'عدد الشهور بمبيعات',
+        'إجمالي المشتريات في الفترة',
+        'عدد الشهور بمشتريات',
         'متوسط المبيعات الشهرية',
         'متوسط المخزون',
         'معدل الدوران',
@@ -154,7 +200,7 @@ def main():
     st.write("سيتم حساب الشراء بناءً على:")
     st.write("- الشهر السابق للشهر المختار")
     st.write("- 3 شهور مقابلة في السنة السابقة")
-    st.write("- متوسط المبيعات الشهرية للـ 4 شهور")
+    st.write("- متوسط المبيعات الشهرية (حسب الشهور الفعلية بمبيعات)")
     st.write("- معدل دوران المخزون وتصنيف المنتجات")
     st.write("- بيانات الموردين للمنتجات")
     
