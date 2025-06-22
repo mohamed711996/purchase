@@ -8,7 +8,8 @@ import io
 def load_data(): 
     sales = pd.read_excel("sales_summary.xlsx") 
     stock = pd.read_excel("Stocks.xlsx") 
-    return sales, stock 
+    purchases = pd.read_excel("purchases.xlsx")  # ملف المشتريات
+    return sales, stock, purchases 
 
 # Convert DataFrame to Excel bytes
 def to_excel(df):
@@ -19,7 +20,7 @@ def to_excel(df):
     return processed_data
  
 # Generate purchase plan based on sales and stock data 
-def generate_plan(sales, stock, target_month, target_year): 
+def generate_plan(sales, stock, purchases, target_month, target_year): 
     last_year = target_year - 1 
     prev_month = target_month - 1 if target_month > 1 else 12
     prev_year = target_year if target_month > 1 else target_year - 1
@@ -47,11 +48,66 @@ def generate_plan(sales, stock, target_month, target_year):
     # حساب متوسط المبيعات (إجمالي المبيعات ÷ 4 شهور)
     sales_summary['Average_Monthly_Sales'] = sales_summary['Quantity'] / 4
     sales_summary.rename(columns={'Quantity': 'Total_Sales_4_Months'}, inplace=True)
+    
+    # تحضير بيانات المشتريات لنفس الفترة
+    purchases['Date'] = pd.to_datetime(purchases['Date'])
+    purchases['Year'] = purchases['Date'].dt.year
+    purchases['Month'] = purchases['Date'].dt.month
+    
+    # مشتريات الشهر السابق
+    purchases_prev_month = purchases[
+        (purchases['Year'] == prev_year) & (purchases['Month'] == prev_month)
+    ]
+    
+    # مشتريات الـ 3 شهور في السنة السابقة
+    purchases_last_year = purchases[
+        (purchases['Year'] == last_year) & (purchases['Month'].isin(months_last_year))
+    ]
+    
+    # دمج بيانات المشتريات
+    combined_purchases = pd.concat([purchases_prev_month, purchases_last_year])
+    purchases_summary = combined_purchases.groupby('Barcode').agg({
+        'purchase': 'sum',  # إجمالي المشتريات
+        'اسم المورد': lambda x: ', '.join(x.unique())  # أسماء الموردين
+    }).reset_index()
+    purchases_summary.rename(columns={
+        'purchase': 'Total_Purchases_4_Months',
+        'اسم المورد': 'Suppliers'
+    }, inplace=True)
  
     # دمج مع بيانات المخزون
     df = stock.merge(sales_summary, on='Barcode', how='left')
+    df = df.merge(purchases_summary, on='Barcode', how='left')
+    
+    # ملء القيم المفقودة
     df['Total_Sales_4_Months'] = df['Total_Sales_4_Months'].fillna(0)
     df['Average_Monthly_Sales'] = df['Average_Monthly_Sales'].fillna(0)
+    df['Total_Purchases_4_Months'] = df['Total_Purchases_4_Months'].fillna(0)
+    df['Suppliers'] = df['Suppliers'].fillna('غير محدد')
+    
+    # حساب معدل الدوران
+    # معدل الدوران = إجمالي المبيعات ÷ متوسط المخزون
+    # متوسط المخزون = (المخزون الحالي + المشتريات) ÷ 2
+    df['Average_Inventory'] = (df['Quantity On Hand'] + df['Total_Purchases_4_Months']) / 2
+    df['Average_Inventory'] = df['Average_Inventory'].replace(0, 1)  # تجنب القسمة على صفر
+    
+    df['Inventory_Turnover_Rate'] = df['Total_Sales_4_Months'] / df['Average_Inventory']
+    df['Inventory_Turnover_Rate'] = df['Inventory_Turnover_Rate'].round(2)
+    
+    # تصنيف سرعة الدوران
+    def classify_turnover(rate):
+        if rate >= 4:
+            return 'سريع جداً'
+        elif rate >= 2:
+            return 'سريع'
+        elif rate >= 1:
+            return 'متوسط'
+        elif rate >= 0.5:
+            return 'بطيء'
+        else:
+            return 'راكد'
+    
+    df['Turnover_Classification'] = df['Inventory_Turnover_Rate'].apply(classify_turnover)
     
     # حساب الشراء المقترح بناءً على متوسط المبيعات الشهرية
     df['Recommended_Purchase'] = df['Average_Monthly_Sales'] - df['Quantity On Hand']
@@ -64,8 +120,13 @@ def generate_plan(sales, stock, target_month, target_year):
         'Product Category/Complete Name', 
         'Quantity On Hand', 
         'Total_Sales_4_Months',
-        'Average_Monthly_Sales', 
-        'Recommended_Purchase'
+        'Total_Purchases_4_Months',
+        'Average_Monthly_Sales',
+        'Average_Inventory',
+        'Inventory_Turnover_Rate',
+        'Turnover_Classification',
+        'Recommended_Purchase',
+        'Suppliers'
     ]].copy()
     
     # إعادة تسمية الأعمدة بالعربية
@@ -75,8 +136,13 @@ def generate_plan(sales, stock, target_month, target_year):
         'فئة المنتج',
         'الكمية المتاحة',
         'إجمالي مبيعات 4 شهور',
+        'إجمالي مشتريات 4 شهور',
         'متوسط المبيعات الشهرية',
-        'الشراء المقترح'
+        'متوسط المخزون',
+        'معدل الدوران',
+        'تصنيف الدوران',
+        'الشراء المقترح',
+        'الموردين'
     ]
     
     return result_df
@@ -89,6 +155,8 @@ def main():
     st.write("- الشهر السابق للشهر المختار")
     st.write("- 3 شهور مقابلة في السنة السابقة")
     st.write("- متوسط المبيعات الشهرية للـ 4 شهور")
+    st.write("- معدل دوران المخزون وتصنيف المنتجات")
+    st.write("- بيانات الموردين للمنتجات")
     
     target_month = st.selectbox("اختر الشهر", 
                                options=list(range(1, 13)),
@@ -100,12 +168,13 @@ def main():
     target_year = st.number_input("أدخل السنة", value=datetime.now().year, min_value=2020, max_value=2030) 
  
     try:
-        sales, stock = load_data() 
+        sales, stock, purchases = load_data() 
         st.success(f"✅ تم تحميل البيانات بنجاح")
         st.write(f"عدد منتجات المبيعات: {len(sales)}")
         st.write(f"عدد منتجات المخزون: {len(stock)}")
+        st.write(f"عدد سجلات المشتريات: {len(purchases)}")
     except FileNotFoundError as e:
-        st.error("❌ لم يتم العثور على ملفات البيانات. تأكد من وجود sales_summary.xlsx و Stocks.xlsx")
+        st.error("❌ لم يتم العثور على ملفات البيانات. تأكد من وجود sales_summary.xlsx و Stocks.xlsx و purchases.xlsx")
         return
     except Exception as e:
         st.error(f"❌ خطأ في تحميل البيانات: {str(e)}")
@@ -113,35 +182,84 @@ def main():
  
     if st.button("توليد خطة الشراء"): 
         try:
-            plan = generate_plan(sales, stock, target_month, target_year) 
+            plan = generate_plan(sales, stock, purchases, target_month, target_year) 
             st.success("✅ تم توليد خطة الشراء بنجاح.")
             
             # عرض إحصائيات سريعة
             total_recommended = plan['الشراء المقترح'].sum()
             products_to_buy = len(plan[plan['الشراء المقترح'] > 0])
+            avg_turnover = plan['معدل الدوران'].mean()
+            fast_moving = len(plan[plan['تصنيف الدوران'].isin(['سريع', 'سريع جداً'])])
+            slow_moving = len(plan[plan['تصنيف الدوران'].isin(['بطيء', 'راكد'])])
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4, col5 = st.columns(5)
             with col1:
                 st.metric("إجمالي القطع المقترح شراؤها", f"{total_recommended:,.0f}")
             with col2:
                 st.metric("عدد المنتجات المطلوب شراؤها", products_to_buy)
             with col3:
-                st.metric("إجمالي المنتجات", len(plan))
+                st.metric("متوسط معدل الدوران", f"{avg_turnover:.2f}")
+            with col4:
+                st.metric("منتجات سريعة الحركة", fast_moving)
+            with col5:
+                st.metric("منتجات بطيئة/راكدة", slow_moving)
+            
+            # تصفية حسب تصنيف الدوران
+            st.subheader("🔍 تصفية النتائج")
+            turnover_filter = st.multiselect(
+                "اختر تصنيف الدوران للعرض:",
+                options=['سريع جداً', 'سريع', 'متوسط', 'بطيء', 'راكد'],
+                default=['سريع جداً', 'سريع', 'متوسط', 'بطيء', 'راكد']
+            )
+            
+            filtered_plan = plan[plan['تصنيف الدوران'].isin(turnover_filter)]
             
             # عرض الجدول
-            st.dataframe(plan, use_container_width=True)
+            st.dataframe(filtered_plan, use_container_width=True)
+            
+            # تحليل إضافي
+            st.subheader("📊 تحليل معدل الدوران")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**توزيع المنتجات حسب تصنيف الدوران:**")
+                turnover_counts = plan['تصنيف الدوران'].value_counts()
+                for category, count in turnover_counts.items():
+                    percentage = (count / len(plan)) * 100
+                    st.write(f"• {category}: {count} منتج ({percentage:.1f}%)")
+            
+            with col2:
+                st.write("**أهم الموردين (للمنتجات المطلوب شراؤها):**")
+                products_to_purchase = plan[plan['الشراء المقترح'] > 0]
+                if len(products_to_purchase) > 0:
+                    # فصل الموردين المتعددين وعدهم
+                    all_suppliers = []
+                    for suppliers_str in products_to_purchase['الموردين']:
+                        if suppliers_str != 'غير محدد':
+                            all_suppliers.extend([s.strip() for s in suppliers_str.split(',')])
+                    
+                    if all_suppliers:
+                        supplier_counts = pd.Series(all_suppliers).value_counts().head(5)
+                        for supplier, count in supplier_counts.items():
+                            st.write(f"• {supplier}: {count} منتج")
+                    else:
+                        st.write("لا توجد بيانات موردين متاحة")
+                else:
+                    st.write("لا توجد منتجات مطلوب شراؤها")
             
             # زر التحميل للإكسيل
-            excel_file = to_excel(plan)
+            excel_file = to_excel(filtered_plan)
             st.download_button(
                 label="📥 تحميل ملف Excel",
                 data=excel_file,
-                file_name=f"purchase_plan_{target_year}_{target_month:02d}.xlsx",
+                file_name=f"purchase_plan_with_turnover_{target_year}_{target_month:02d}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             
         except Exception as e:
             st.error(f"❌ خطأ في توليد خطة الشراء: {str(e)}")
+            st.write("تفاصيل الخطأ:", str(e))
  
 if __name__ == "__main__": 
     main()
