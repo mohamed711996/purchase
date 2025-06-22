@@ -45,7 +45,8 @@ def generate_plan(sales, stock, purchases, target_month, target_year):
     combined = pd.concat([sales_prev_month, sales_last_year])
     
     # حساب عدد الشهور اللي فيها مبيعات فعلية لكل منتج
-    months_with_sales = combined.groupby('Barcode').size().reset_index(name='Months_With_Sales')
+    months_with_sales = combined[['Barcode', 'Year', 'Month']].drop_duplicates()
+    months_with_sales = months_with_sales.groupby('Barcode').size().reset_index(name='Months_With_Sales')
     
     # حساب إجمالي المبيعات
     sales_summary = combined.groupby('Barcode')['Quantity'].sum().reset_index()
@@ -76,7 +77,8 @@ def generate_plan(sales, stock, purchases, target_month, target_year):
     combined_purchases = pd.concat([purchases_prev_month, purchases_last_year])
     
     # حساب عدد الشهور اللي فيها مشتريات فعلية
-    months_with_purchases = combined_purchases.groupby('Barcode').size().reset_index(name='Months_With_Purchases')
+    months_with_purchases = combined_purchases[['Barcode', 'Year', 'Month']].drop_duplicates()
+    months_with_purchases = months_with_purchases.groupby('Barcode').size().reset_index(name='Months_With_Purchases')
     
     purchases_summary = combined_purchases.groupby('Barcode').agg({
         'purchase': 'sum',  # إجمالي المشتريات
