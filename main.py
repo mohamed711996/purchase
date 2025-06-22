@@ -362,7 +362,7 @@ def main():
                 "الكمية المتاحة": st.column_config.NumberColumn(format="%.0f"),
                 "متوسط المبيعات الشهرية": st.column_config.NumberColumn(format="%.1f"),
                 "أيام التغطية": st.column_config.NumberColumn(help="عدد الأيام التي تكفيها الكمية الحالية", format="%.1f يوم"),
-                "التكلفة الإجمالية": st.column_config.NumberColumn("التكلفة الإجمالية", format="SAR %.2f")
+                "التكلفة الإجمالية": st.column_config.NumberColumn("التكلفة الإجمالية", format="EGP %.2f")
             }
         )
 
