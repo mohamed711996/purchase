@@ -131,7 +131,6 @@ def generate_plan(sales, stock, purchases, target_month, target_year, safety_sto
     ).reset_index()
     
     months_with_sales['Average_Monthly_Sales'] = (months_with_sales['Total_Sales_Period'] / months_with_sales['Months_With_Sales']).replace([np.inf, -np.inf], 0).fillna(0)
-    months_with_sales['Average_Monthly_Invoices'] = (months_with_sales['Invoice_Count'] / months_with_sales['Months_With_Sales']).replace([np.inf, -np.inf], 0).fillna(0)
     
     purchases['Date'] = pd.to_datetime(purchases['Date'], errors='coerce')
     purchases = purchases.dropna(subset=['Date'])
@@ -153,7 +152,7 @@ def generate_plan(sales, stock, purchases, target_month, target_year, safety_sto
     
     df = stock.merge(months_with_sales, on='Barcode', how='left').merge(purchases_summary, on='Barcode', how='left')
     
-    for col in ['Total_Sales_Period', 'Average_Monthly_Sales', 'Months_With_Sales', 'Invoice_Count', 'Average_Monthly_Invoices', 'Total_Purchases_Period']:
+    for col in ['Total_Sales_Period', 'Average_Monthly_Sales', 'Months_With_Sales', 'Invoice_Count', 'Total_Purchases_Period']:
         if col in df.columns:
             df[col] = df[col].fillna(0)
     df['Suppliers'] = df['Suppliers'].fillna('غير محدد')
@@ -162,11 +161,9 @@ def generate_plan(sales, stock, purchases, target_month, target_year, safety_sto
     df['Average_Inventory'] = (df['Beginning_Inventory'] + df['Quantity On Hand']) / 2
     df['Average_Inventory'] = df['Average_Inventory'].clip(lower=1)
 
-    # --- تحويل معدل الدوران إلى سنوي بضربه في 3 (لأن الفترة 4 أشهر) ---
     df['Quantity_Turnover_Rate'] = (df['Total_Sales_Period'] / df['Average_Inventory']) * 3
     df['Invoice_Turnover_Rate'] = (df['Invoice_Count'] * 3) / df['Average_Inventory']
     
-    # --- تعديل عتبات التصنيف لتناسب المعدلات السنوية الجديدة ---
     def classify_quantity_turnover(rate):
         if rate >= 18: return 'سريع جداً'
         elif rate >= 9: return 'سريع'
@@ -197,18 +194,26 @@ def generate_plan(sales, stock, purchases, target_month, target_year, safety_sto
     
     df['Total_Cost'] = df['Recommended_Purchase'] * df['Cost'] if 'Cost' in df.columns else 0
     
+    # --- تعديل: إضافة الأعمدة الجديدة هنا ---
     result_columns = [
         'Barcode', 'Name', 'Product Category/Complete Name', 'Quantity On Hand', 'Average_Monthly_Sales', 
-        'Days_Of_Stock', 'Quantity_Turnover_Rate', 'Invoice_Turnover_Rate', 'Quantity_Turnover_Classification', 
-        'Invoice_Turnover_Classification', 'Priority', 'Recommended_Purchase', 'Total_Cost', 'Suppliers'
+        'Days_Of_Stock', 
+        'Months_With_Sales', 'Invoice_Count', # <-- الأعمدة الجديدة التي تمت إضافتها
+        'Quantity_Turnover_Rate', 'Invoice_Turnover_Rate', 
+        'Quantity_Turnover_Classification', 'Invoice_Turnover_Classification', 
+        'Priority', 'Recommended_Purchase', 'Total_Cost', 'Suppliers'
     ]
     available_columns = [col for col in result_columns if col in df.columns]
     result_df = df[available_columns]
     
+    # --- تعديل: إضافة التسميات العربية هنا ---
     arabic_names = {
         'Barcode': 'الباركود', 'Name': 'اسم المنتج', 'Product Category/Complete Name': 'فئة المنتج',
         'Quantity On Hand': 'الكمية المتاحة', 'Average_Monthly_Sales': 'متوسط المبيعات الشهرية',
-        'Days_Of_Stock': 'أيام التغطية', 'Quantity_Turnover_Rate': 'معدل دوران الكميات',
+        'Days_Of_Stock': 'أيام التغطية', 
+        'Months_With_Sales': 'شهور البيع', # <-- التسمية الجديدة
+        'Invoice_Count': 'عدد الفواتير', # <-- التسمية الجديدة
+        'Quantity_Turnover_Rate': 'معدل دوران الكميات',
         'Invoice_Turnover_Rate': 'معدل دوران الفواتير', 'Quantity_Turnover_Classification': 'تصنيف دوران الكميات',
         'Invoice_Turnover_Classification': 'تصنيف دوران الفواتير', 'Priority': 'الأولوية',
         'Recommended_Purchase': 'الشراء المقترح', 'Total_Cost': 'التكلفة الإجمالية', 'Suppliers': 'الموردين'
@@ -230,7 +235,7 @@ def create_combined_analysis_chart(df):
     df_filtered = df[df['الشراء المقترح'] > 0]
     if df_filtered.empty: return None
     fig = px.scatter(df_filtered, x='معدل دوران الكميات', y='معدل دوران الفواتير', size='الشراء المقترح', color='الأولوية',
-                     hover_data=['اسم المنتج', 'الكمية المتاحة'], title="تحليل مقارن للمنتجات المقترحة",
+                     hover_data=['اسم المنتج', 'الكمية المتاحة', 'شهور البيع', 'عدد الفواتير'], title="تحليل مقارن للمنتجات المقترحة",
                      labels={'معدل دوران الكميات': 'معدل دوران الكميات (بطيء -> سريع)', 'معدل دوران الفواتير': 'معدل دوران الفواتير (نادر -> متكرر)'},
                      color_discrete_map={'عاجل جداً': '#FF4444', 'عاجل': '#FF8800', 'متوسط': '#FFAA00', 'منخفض': '#00AA00'})
     fig.update_layout(height=500)
@@ -344,18 +349,23 @@ def main():
             column_config={
                 "الأولوية": st.column_config.SelectboxColumn("الأولوية", options=["عاجل جداً", "عاجل", "متوسط", "منخفض"]),
                 "الشراء المقترح": st.column_config.NumberColumn("الشراء المقترح", format="%.0f"),
+                "شهور البيع": st.column_config.NumberColumn("شهور البيع", help="عدد الشهور التي تم فيها بيع المنتج خلال فترة التحليل (4 شهور).", format="%d شهر"),
+                "عدد الفواتير": st.column_config.NumberColumn("عدد الفواتير", help="إجمالي عدد الفواتير الفريدة التي تحتوي على المنتج خلال فترة التحليل.", format="%d فاتورة"),
                 "معدل دوران الكميات": st.column_config.NumberColumn("معدل دوران الكميات", help="المعدل السنوي لدوران المخزون بناءً على الكميات المباعة.", format="%.2f"),
                 "معدل دوران الفواتير": st.column_config.NumberColumn("معدل دوران الفواتير", help="المعدل السنوي لدوران المخزون بناءً على تكرار البيع.", format="%.2f"),
                 "الكمية المتاحة": st.column_config.NumberColumn(format="%.0f"),
                 "متوسط المبيعات الشهرية": st.column_config.NumberColumn(format="%.1f"),
                 "أيام التغطية": st.column_config.NumberColumn(help="عدد الأيام التي تكفيها الكمية الحالية", format="%.1f يوم"),
-                "التكلفة الإجمالية": st.column_config.NumberColumn("التكلفة الإجمالية", format="EGP%.2f")
+                "التكلفة الإجمالية": st.column_config.NumberColumn("التكلفة الإجمالية", format="SAR %.2f")
             }
         )
 
         if 'فئة المنتج' in filtered_plan.columns:
             st.subheader("📋 ملخص حسب الفئة")
-            category_summary = filtered_plan.groupby('فئة المنتج').agg(إجمالي_الشراء_المقترح=('الشراء المقترح', 'sum'), عدد_المنتجات=('الباركود', 'count')).round(0).sort_values('إجمالي_الشراء_المقترح', ascending=False)
+            category_summary = filtered_plan.groupby('فئة المنتج').agg(
+                إجمالي_الشراء_المقترح=('الشراء المقترح', 'sum'), 
+                عدد_المنتجات=('الباركود', 'count')
+            ).round(0).sort_values('إجمالي_الشراء_المقترح', ascending=False)
             st.dataframe(category_summary, use_container_width=True)
         
         st.subheader("📥 تحميل النتائج")
