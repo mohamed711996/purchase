@@ -465,7 +465,7 @@ def main():
                         ),
                         "التكلفة الإجمالية": st.column_config.NumberColumn(
                             "التكلفة الإجمالية",
-                            format="SAR %.2f" 
+                            format="ُEGP %.2f" 
                         )
                     }
                 )
