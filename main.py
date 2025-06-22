@@ -8,7 +8,7 @@ import io
 def load_data(): 
     sales = pd.read_excel("sales_summary.xlsx") 
     stock = pd.read_excel("Stocks.xlsx") 
-    purchases = pd.read_excel("purchases.xlsx")  # ملف المشتريات
+    purchases = pd.read_excel("Purchase.xlsx")  # ملف المشتريات
     return sales, stock, purchases 
 
 # Convert DataFrame to Excel bytes
