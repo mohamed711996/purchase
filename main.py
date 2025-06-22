@@ -5,8 +5,8 @@ from datetime import datetime
 # Load data from Excel files
 @st.cache_data
 def load_data():
-    sales = pd.read_excel(r"D:\stocks report new\sales_summary.xlsx")
-    stock = pd.read_excel(r"D:\stocks report new\Stocks.xlsx")
+    sales = pd.read_excel("sales_summary.xlsx")
+    stock = pd.read_excel("Stocks.xlsx")
     return sales, stock
 
 # Generate purchase plan based on sales and stock data
